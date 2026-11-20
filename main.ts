@@ -1,69 +1,60 @@
-// gta6-clipper-01 entry for make.fun: hand the video's address to the grader.
+// main.ts — gta6-clipper-01 entry program (Node 22, standard library only).
 //
-// The entry is the YouTube video itself: a vertical Short cut from Rockstar's
-// GTA VI Launch Trailer (the vault walk, trailer time 34.4s -> 37.33s), with a
-// make.fun pitch spoken through on-screen text. The clip is made by the
-// ffmpeg recipe in build-clip.sh; this program only delivers VIDEO.json.
+// Reads VIDEO.json from the repository root, checks that its url is a real
+// YouTube video address (a Short, a watch link, or a youtu.be link), and
+// copies it to the output directory so the grader can read it.
 //
-// Run by the grader as:  MAKEFUN_BOT_DIR=<repo> MAKEFUN_OUTPUT_DIR=/output
-//   node main.ts
-// It reads VIDEO.json from the repository root, refuses a placeholder
-// address loudly (so a half-finished entry can never be submitted by
-// accident), and writes the validated address to /output/VIDEO.json.
+//   MAKEFUN_BOT_DIR     repository root (default ".")
+//   MAKEFUN_OUTPUT_DIR  where VIDEO.json is written (default "out")
 //
-// Node 22, standard library only.
+// Exit 0 prints the video address. Anything else exits 1 with a clear
+// message on stderr.
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
-const BOT_DIR = process.env.MAKEFUN_BOT_DIR ?? '/bot';
-const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
-const VIDEO_PATH = join(BOT_DIR, 'VIDEO.json');
+const botDir = process.env.MAKEFUN_BOT_DIR ?? ".";
+const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? "out";
+
+// A YouTube video id is exactly 11 characters of letters, digits, _ and -.
+const YOUTUBE_URL =
+  /^https:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:shorts\/|watch\?v=)|youtu\.be\/)([A-Za-z0-9_-]{11})(?:[?&#].*)?$/;
 
 function fail(message: string): never {
-  console.error(`gta6-clipper-01: ${message}`);
+  console.error(`error: ${message}`);
   process.exit(1);
 }
 
+const inputPath = join(botDir, "VIDEO.json");
+
 let raw: string;
 try {
-  raw = readFileSync(VIDEO_PATH, 'utf8');
+  raw = readFileSync(inputPath, "utf8");
 } catch {
-  fail(`could not read ${VIDEO_PATH}`);
+  fail(`cannot read ${inputPath}`);
 }
 
-let video: unknown;
+let parsed: unknown;
 try {
-  video = JSON.parse(raw);
+  parsed = JSON.parse(raw);
 } catch {
-  fail('VIDEO.json is not valid JSON');
+  fail("VIDEO.json is not valid JSON");
 }
 
-if (typeof video !== 'object' || video === null) {
-  fail('VIDEO.json must be a JSON object with a "url" field');
-}
-const url = (video as { url?: unknown }).url;
-if (typeof url !== 'string' || url.length === 0) {
-  fail('VIDEO.json must carry a "url" string');
+const url = (parsed as { url?: unknown } | null)?.url;
+if (typeof url !== "string" || url.length === 0) {
+  fail("VIDEO.json must hold an object with a non-empty string url");
 }
 
-let parsed: URL;
-try {
-  parsed = new URL(url);
-} catch {
-  fail(`VIDEO.json url is not a valid URL: ${url}`);
-}
-const host = parsed.hostname.toLowerCase();
-if (host !== 'www.youtube.com' && host !== 'youtube.com' && host !== 'youtu.be') {
-  fail(`VIDEO.json url is not a YouTube address: ${url}`);
-}
-if (url.includes('REPLACE_AFTER_UPLOAD') || url.includes('<id>')) {
-  fail(
-    'VIDEO.json still holds the placeholder address: upload clip.mp4 to ' +
-      'YouTube as a public Short, then put its real address in VIDEO.json',
-  );
+if (url.includes("REPLACE_AFTER_UPLOAD") || url.includes("<id>")) {
+  fail("VIDEO.json still holds a placeholder URL; put the published video's address in it");
 }
 
-mkdirSync(OUTPUT_DIR, { recursive: true });
-writeFileSync(join(OUTPUT_DIR, 'VIDEO.json'), `${JSON.stringify({ url }, null, 2)}\n`);
-console.log(`gta6-clipper-01: VIDEO.json -> ${url}`);
+const match = YOUTUBE_URL.exec(url);
+if (match === null) {
+  fail(`not a YouTube video address: ${url}`);
+}
+
+mkdirSync(outDir, { recursive: true });
+writeFileSync(join(outDir, "VIDEO.json"), `${JSON.stringify({ url })}\n`, "utf8");
+console.log(url);
